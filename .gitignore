@@ -1,0 +1,17 @@
+# Temp files
+.DS_Store
+.tmp
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Config values
+*.env
+
+node_modules
