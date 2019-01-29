@@ -8,7 +8,12 @@
     "start": "node --experimental-worker index.js"
   },
   "dependencies": {
-    "flowdock": "^0.9.1"
+    "flowdock": "^0.9.1",
+    "isomorphic-fetch": "^2.2.1",
+    "request": "^2.88.0",
+    "sharp": "^0.21.3",
+    "tmp": "^0.0.33",
+    "unsplash-js": "^4.8.0"
   },
   "devDependencies": {
     "prettier": "^1.16.1"

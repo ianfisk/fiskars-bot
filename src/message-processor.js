@@ -6,6 +6,8 @@ const path = require('path');
 const Flowdock = require('flowdock');
 const config = require('./config');
 const { WorkerBase } = require('./worker-pool');
+const ImageManager = require('./image-manager');
+const ImageService = require('./image-service');
 
 const readFile = util.promisify(fs.readFile);
 
@@ -14,6 +16,9 @@ class MessageProcessor extends WorkerBase {
 		super();
 
 		this.session = new Flowdock.Session(config.apiToken);
+		this.imageManager = new ImageManager({
+			imageService: new ImageService(),
+		});
 	}
 
 	async handleWorkerData(workerData) {
@@ -21,32 +26,51 @@ class MessageProcessor extends WorkerBase {
 			throw new Error('Worker data must be sent to worker.');
 		}
 
-		const { queryText, threadId, flowId } = workerData;
+		const { threadId, flowId } = workerData;
 		if (!threadId || !flowId) {
 			console.warn('Missing thread ID or flow ID in worker thread.');
 			return;
 		}
 
-		await this.uploadFile(workerData);
+		await this._uploadFile(workerData);
 	}
 
-	async uploadFile({ flowId, threadId }) {
-		const fileContents = await readFile(path.join(__dirname, 'me.jpeg'));
+	async _uploadFile({ flowId, threadId }) {
+		const imageFilePath = await this.imageManager.tryGetRandomImage({ query: 'man' });
+		if (!imageFilePath) {
+			await this._postMessage({
+				flowId,
+				threadId,
+				content: 'Fiskars Bot is unable to generate image 😔',
+			});
+			return;
+		}
+
+		const fileContents = await readFile(imageFilePath);
 		const buffer = Buffer.from(fileContents);
 
-		await new Promise((resolve, reject) => {
+		await this._postMessage({
+			threadId,
+			flowId,
+			messageKind: 'file',
+			content: {
+				data: buffer.toString('base64'),
+				content_type: 'image/png',
+				file_name: 'your-welcome.png',
+			},
+		});
+	}
+
+	_postMessage({ threadId, flowId, content, messageKind = 'message' }) {
+		return new Promise((resolve, reject) => {
 			this.session.post(
 				'/messages',
 				{
-					event: 'file',
+					event: messageKind,
 					flow: flowId,
 					thread_id: threadId,
 					tags: [],
-					content: {
-						data: buffer.toString('base64'),
-						content_type: 'image/png',
-						file_name: 'cabinet_icon.png',
-					},
+					content,
 				},
 				err => {
 					if (!err) {
