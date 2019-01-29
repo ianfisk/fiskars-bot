@@ -1,8 +1,12 @@
 'use strict';
 
-const path = require('path');
+const fs = require('fs');
+const util = require('util');
 const Flowdock = require('flowdock');
-const { WorkerPool } = require('./worker-pool');
+const ImageManager = require('./image-manager');
+const ImageService = require('./image-service');
+
+const readFile = util.promisify(fs.readFile);
 
 const fiskarsMessageCommand = /^\s*fiskars:\s*(.*)/i;
 
@@ -10,16 +14,14 @@ class FiskarsBot {
 	constructor({ credentials, flowIds }) {
 		this.credentials = credentials;
 		this.flowIds = flowIds;
-
-		this.workerPool = new WorkerPool({
-			workerScriptPath: path.join(__dirname, 'message-processor.js'),
-			maxWorkers: 2,
+		this.imageManager = new ImageManager({
+			imageService: new ImageService(),
 		});
 	}
 
 	start() {
-		const session = new Flowdock.Session(this.credentials);
-		this.stream = session.stream(this.flowIds);
+		this.session = new Flowdock.Session(this.credentials);
+		this.stream = this.session.stream(this.flowIds);
 
 		this.stream.on('connected', () => {
 			console.log('Connected to Flowdock API.');
@@ -48,14 +50,64 @@ class FiskarsBot {
 
 		const queryText = match[1].trim();
 		try {
-			await this.workerPool.processData({
-				queryText,
-				threadId,
-				flowId,
-			});
+			console.log('Processing message:', queryText);
+			await this._answer({ flowId, threadId });
 		} catch (error) {
-			console.error('Caught error from worker:', error);
+			console.error('Caught error from message processor:', error);
+			await this._postMessage({
+				flowId,
+				threadId,
+				content: 'Fiskars Bot messed up 😔',
+			});
 		}
+	}
+
+	async _answer({ flowId, threadId }) {
+		const imageFilePath = await this.imageManager.tryGetRandomImage({ query: 'man' });
+		if (!imageFilePath) {
+			await this._postMessage({
+				flowId,
+				threadId,
+				content: 'Fiskars Bot is unable to generate an image 😔',
+			});
+			return;
+		}
+
+		const fileContents = await readFile(imageFilePath);
+		const buffer = Buffer.from(fileContents);
+
+		await this._postMessage({
+			threadId,
+			flowId,
+			messageKind: 'file',
+			content: {
+				data: buffer.toString('base64'),
+				content_type: 'image/png',
+				file_name: 'your-welcome.png',
+			},
+		});
+	}
+
+	_postMessage({ threadId, flowId, content, messageKind = 'message' }) {
+		return new Promise((resolve, reject) => {
+			this.session.post(
+				'/messages',
+				{
+					event: messageKind,
+					flow: flowId,
+					thread_id: threadId,
+					tags: [],
+					content,
+				},
+				err => {
+					if (!err) {
+						resolve();
+					} else {
+						reject(err);
+					}
+				}
+			);
+		});
 	}
 }
 
