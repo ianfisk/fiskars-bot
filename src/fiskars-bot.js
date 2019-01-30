@@ -1,14 +1,20 @@
 'use strict';
 
+require('@tensorflow/tfjs-node');
+const path = require('path');
 const fs = require('fs');
 const util = require('util');
 const Flowdock = require('flowdock');
+const canvas = require('canvas');
+const faceapi = require('face-api.js');
+const config = require('./config');
 const ImageManager = require('./image-manager');
 const ImageService = require('./image-service');
 
-const readFile = util.promisify(fs.readFile);
+const readdirAsync = util.promisify(fs.readdir);
 
-const fiskarsMessageCommand = /^\s*fiskars:\s*(.*)/i;
+const { Canvas, Image, ImageData, loadImage } = canvas;
+faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
 class FiskarsBot {
 	constructor({ credentials, flowIds }) {
@@ -17,9 +23,17 @@ class FiskarsBot {
 		this.imageManager = new ImageManager({
 			imageService: new ImageService(),
 		});
+		this.fiskarsFaceImagePaths = [];
 	}
 
-	start() {
+	async start() {
+		await faceapi.nets.tinyFaceDetector.loadFromDisk(config.paths.modelDirectory);
+
+		// get filenames of face images
+		this.fiskarsFaceImagePaths = (await readdirAsync(config.paths.imagesDirectory)).map(fileName =>
+			path.join(config.paths.imagesDirectory, fileName)
+		);
+
 		this.session = new Flowdock.Session(this.credentials);
 		this.stream = this.session.stream(this.flowIds);
 
@@ -42,15 +56,13 @@ class FiskarsBot {
 			return;
 		}
 
-		const messageTextContent = content;
-		const match = fiskarsMessageCommand.exec(messageTextContent);
-		if (!match) {
+		const shouldRespondToMessage = content.toLowerCase().indexOf('fiskars') !== -1;
+		if (!shouldRespondToMessage) {
 			return;
 		}
 
-		const queryText = match[1].trim();
 		try {
-			console.log('Processing message:', queryText);
+			console.log('Processing message:', content);
 			await this._answer({ flowId, threadId });
 		} catch (error) {
 			console.error('Caught error from message processor:', error);
@@ -63,7 +75,7 @@ class FiskarsBot {
 	}
 
 	async _answer({ flowId, threadId }) {
-		const imageFilePath = await this.imageManager.tryGetRandomImage({ query: 'man' });
+		const imageFilePath = await this.imageManager.tryGetRandomImage({ query: 'face' });
 		if (!imageFilePath) {
 			await this._postMessage({
 				flowId,
@@ -73,17 +85,19 @@ class FiskarsBot {
 			return;
 		}
 
-		const fileContents = await readFile(imageFilePath);
-		const buffer = Buffer.from(fileContents);
+		const imageBuffer = await addFiskarsFaceToImage({
+			imageFilePath,
+			fiskarsFaceImagePaths: this.fiskarsFaceImagePaths,
+		});
 
 		await this._postMessage({
 			threadId,
 			flowId,
 			messageKind: 'file',
 			content: {
-				data: buffer.toString('base64'),
-				content_type: 'image/png',
-				file_name: 'your-welcome.png',
+				data: imageBuffer.toString('base64'),
+				content_type: 'image/jpeg',
+				file_name: 'your-welcome.jpeg',
 			},
 		});
 	}
@@ -109,6 +123,27 @@ class FiskarsBot {
 			);
 		});
 	}
+}
+
+async function addFiskarsFaceToImage({ imageFilePath, fiskarsFaceImagePaths }) {
+	const image = await canvas.loadImage(imageFilePath);
+	const detections = await faceapi.detectAllFaces(
+		image,
+		new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.25 })
+	);
+
+	const imageCanvas = faceapi.createCanvasFromMedia(image);
+	const ctx = imageCanvas.getContext('2d');
+
+	for (const detection of detections) {
+		const { box } = detection;
+		const fiskarsFaceImagePath =
+			fiskarsFaceImagePaths[Math.floor(Math.random() * fiskarsFaceImagePaths.length)];
+		const fiskarsFace = await loadImage(fiskarsFaceImagePath);
+		ctx.drawImage(fiskarsFace, box.x, box.y, box.width, box.height);
+	}
+
+	return imageCanvas.toBuffer('image/jpeg');
 }
 
 module.exports = FiskarsBot;

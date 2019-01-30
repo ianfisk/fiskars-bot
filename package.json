@@ -8,6 +8,9 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@tensorflow/tfjs-node": "^0.2.3",
+    "canvas": "^2.3.1",
+    "face-api.js": "^0.18.0",
     "flowdock": "^0.9.1",
     "isomorphic-fetch": "^2.2.1",
     "request": "^2.88.0",
