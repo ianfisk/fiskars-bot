@@ -5,13 +5,12 @@ const fs = require('fs');
 const request = require('request');
 const sharp = require('sharp');
 const { default: Unsplash, toJson } = require('unsplash-js');
-const config = require('./config');
 
 class UnsplashImageService {
-	constructor() {
+	constructor({ accessKey, secret }) {
 		this.unsplashService = new Unsplash({
-			applicationId: config.unsplash.accessKey,
-			secret: config.unsplash.secret,
+			applicationId: accessKey,
+			secret,
 		});
 	}
 

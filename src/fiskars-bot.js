@@ -8,8 +8,6 @@ const Flowdock = require('flowdock');
 const canvas = require('canvas');
 const faceapi = require('face-api.js');
 const config = require('./config');
-const ImageManager = require('./image-manager');
-const ImageService = require('./image-service');
 
 const readdirAsync = util.promisify(fs.readdir);
 
@@ -17,12 +15,10 @@ const { Canvas, Image, ImageData, loadImage } = canvas;
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
 class FiskarsBot {
-	constructor({ credentials, flowIds }) {
+	constructor({ credentials, flowIds, imageManager }) {
 		this.credentials = credentials;
 		this.flowIds = flowIds;
-		this.imageManager = new ImageManager({
-			imageService: new ImageService(),
-		});
+		this.imageManager = imageManager;
 		this.fiskarsFaceImagePaths = [];
 	}
 
